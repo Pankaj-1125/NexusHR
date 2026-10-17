@@ -13,5 +13,5 @@ RUN apt-get update \
     && useradd --system --create-home --uid 10001 nexushr
 COPY --from=build /workspace/target/*.jar /app/app.jar
 USER nexushr
-EXPOSE 8080
+EXPOSE 10000
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
