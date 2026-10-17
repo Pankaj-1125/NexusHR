@@ -1437,9 +1437,9 @@ function Login({ onLogin }) {
 
 
                     <span>
-                      Choose Username
-                      (first-time employees only)
-                    </span>
+  Choose Username
+  (first-time account setup only)
+</span>
 
 
                     <div className="nx-login-input-wrap">

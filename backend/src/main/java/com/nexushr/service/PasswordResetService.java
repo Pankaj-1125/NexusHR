@@ -9,47 +9,30 @@ import com.nexushr.repository.PasswordResetTokenRepository;
 import com.nexushr.repository.UserRepository;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
-
 import org.springframework.stereotype.Service;
-
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-
 import java.time.LocalDateTime;
-
 import java.util.List;
 import java.util.Locale;
 
 @Service
 public class PasswordResetService {
 
-    private static final int OTP_EXPIRY_MINUTES =
-            10;
+    private static final int OTP_EXPIRY_MINUTES = 10;
 
-    private final PasswordResetTokenRepository
-            resetTokenRepository;
-
-    private final UserRepository
-            userRepository;
-
-    private final EmployeeRepository
-            employeeRepository;
-
-    private final PasswordEncoder
-            passwordEncoder;
-
-    private final EmailNotificationService
-            emailNotificationService;
-
-    private final RefreshTokenService
-            refreshTokenService;
-
-    private final AuditLogService
-            auditLogService;
+    private final PasswordResetTokenRepository resetTokenRepository;
+    private final UserRepository userRepository;
+    private final EmployeeRepository employeeRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final EmailNotificationService emailNotificationService;
+    private final RefreshTokenService refreshTokenService;
+    private final AuditLogService auditLogService;
 
     private final SecureRandom secureRandom =
             new SecureRandom();
+
 
     public PasswordResetService(
             PasswordResetTokenRepository resetTokenRepository,
@@ -83,8 +66,9 @@ public class PasswordResetService {
                 auditLogService;
     }
 
+
     // =========================================================
-    // REQUEST RESET OTP
+    // REQUEST PASSWORD RESET OTP
     // =========================================================
 
     @Transactional
@@ -98,17 +82,21 @@ public class PasswordResetService {
             return;
         }
 
+
         String value =
                 usernameOrEmail
                         .trim();
+
 
         User user =
                 resolveUser(
                         value
                 );
 
+
         /*
-         * Do not reveal whether account exists.
+         * Security:
+         * Never reveal whether the account exists.
          */
         if (user == null
                 || !user.isEnabled()) {
@@ -116,16 +104,23 @@ public class PasswordResetService {
             return;
         }
 
+
         String recoveryEmail =
                 resolveRecoveryEmail(
                         user
                 );
+
 
         if (recoveryEmail == null
                 || recoveryEmail.isBlank()) {
 
             return;
         }
+
+
+        // =====================================================
+        // GENERATE OTP
+        // =====================================================
 
         String otp =
                 String.format(
@@ -135,10 +130,12 @@ public class PasswordResetService {
                         )
                 );
 
+
         String otpHash =
                 passwordEncoder.encode(
                         otp
                 );
+
 
         PasswordResetToken token =
                 new PasswordResetToken(
@@ -151,9 +148,18 @@ public class PasswordResetService {
                                 )
                 );
 
+
+        /*
+         * Save temporarily.
+         *
+         * IMPORTANT:
+         * If email delivery fails,
+         * this token will immediately be removed.
+         */
         resetTokenRepository.save(
                 token
         );
+
 
         String message =
                 "Your NexusHR password reset code is: "
@@ -163,12 +169,19 @@ public class PasswordResetService {
                         + " minutes."
                         + "\n\nIf you did not request this reset, ignore this email.";
 
+
+        // =====================================================
+        // SEND OTP EMAIL
+        // =====================================================
+
         EmailNotificationService.DeliveryResult deliveryResult =
-                emailNotificationService.sendToAddress(
-                        recoveryEmail,
-                        "NexusHR Password Reset",
-                        message
-                );
+                emailNotificationService
+                        .sendToAddress(
+                                recoveryEmail,
+                                "NexusHR Password Reset",
+                                message
+                        );
+
 
         System.out.println(
                 "[PASSWORD RESET EMAIL] Status="
@@ -177,25 +190,65 @@ public class PasswordResetService {
                         + deliveryResult.message()
         );
 
+
+        // =====================================================
+        // EMAIL DELIVERY FAILED
+        // =====================================================
+
         if (!"SENT".equalsIgnoreCase(
                 deliveryResult.status()
         )) {
+
+            /*
+             * CRITICAL FIX:
+             *
+             * Previously a failed email still left
+             * the newly generated OTP in the database.
+             *
+             * That meant an older OTP delivered successfully
+             * by email immediately became invalid.
+             *
+             * Delete the new token when delivery fails.
+             */
+            resetTokenRepository.delete(
+                    token
+            );
+
 
             System.err.println(
                     "[PASSWORD RESET EMAIL FAILED] "
                             + deliveryResult.message()
             );
+
+
+            auditLogService.log(
+                    user.getUsername(),
+                    "PASSWORD_RESET_EMAIL_FAILED",
+                    "AUTHENTICATION",
+                    user.getId(),
+                    "Password reset email could not be delivered",
+                    null
+            );
+
+
+            return;
         }
+
+
+        // =====================================================
+        // EMAIL SUCCESS
+        // =====================================================
 
         auditLogService.log(
                 user.getUsername(),
                 "PASSWORD_RESET_REQUESTED",
                 "AUTHENTICATION",
                 user.getId(),
-                "Password reset requested",
+                "Password reset code sent successfully",
                 null
         );
     }
+
 
     // =========================================================
     // COMPATIBILITY RESET METHOD
@@ -216,8 +269,10 @@ public class PasswordResetService {
         );
     }
 
+
     // =========================================================
-    // RESET PASSWORD / FIRST-TIME USERNAME SETUP
+    // RESET PASSWORD
+    // FIRST-TIME USERNAME SETUP
     // =========================================================
 
     @Transactional
@@ -228,6 +283,10 @@ public class PasswordResetService {
             String desiredUsername
     ) {
 
+        // =====================================================
+        // BASIC VALIDATION
+        // =====================================================
+
         if (usernameOrEmail == null
                 || usernameOrEmail.isBlank()) {
 
@@ -235,6 +294,7 @@ public class PasswordResetService {
                     "Username or email is required"
             );
         }
+
 
         if (otp == null
                 || otp.isBlank()) {
@@ -244,15 +304,22 @@ public class PasswordResetService {
             );
         }
 
+
         validatePassword(
                 newPassword
         );
+
+
+        // =====================================================
+        // FIND USER
+        // =====================================================
 
         User user =
                 resolveUser(
                         usernameOrEmail
                                 .trim()
                 );
+
 
         if (user == null
                 || !user.isEnabled()) {
@@ -261,6 +328,11 @@ public class PasswordResetService {
                     "Invalid or expired reset request"
             );
         }
+
+
+        // =====================================================
+        // GET LATEST ACTIVE OTP
+        // =====================================================
 
         PasswordResetToken resetToken =
                 resetTokenRepository
@@ -273,6 +345,11 @@ public class PasswordResetService {
                                 )
                         );
 
+
+        // =====================================================
+        // OTP EXPIRY
+        // =====================================================
+
         if (resetToken
                 .getExpiresAt()
                 .isBefore(
@@ -284,6 +361,11 @@ public class PasswordResetService {
             );
         }
 
+
+        // =====================================================
+        // OTP MATCH
+        // =====================================================
+
         if (!passwordEncoder.matches(
                 otp.trim(),
                 resetToken.getCodeHash()
@@ -294,14 +376,38 @@ public class PasswordResetService {
             );
         }
 
+
         // =====================================================
-        // USERNAME MAY BE SELECTED ONLY ONCE BY EMPLOYEE
+        // FIRST-TIME ACCOUNT SETUP
+        // EMPLOYEE / MANAGER / HR
         // =====================================================
 
-        boolean firstTimeEmployeeSetup =
-                "EMPLOYEE".equalsIgnoreCase(
-                        user.getRole()
+        String accountRole =
+                user.getRole() == null
+                        ? ""
+                        : user.getRole()
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
+
+
+        boolean supportedFirstTimeRole =
+                "EMPLOYEE".equals(
+                        accountRole
                 )
+                        ||
+                        "MANAGER".equals(
+                                accountRole
+                        )
+                        ||
+                        "HR".equals(
+                                accountRole
+                        );
+
+
+        boolean firstTimeAccountSetup =
+                supportedFirstTimeRole
                         &&
                         user.getUsername() != null
                         &&
@@ -310,7 +416,12 @@ public class PasswordResetService {
                                         "pending_"
                                 );
 
-        if (firstTimeEmployeeSetup) {
+
+        // =====================================================
+        // CREATE USERNAME DURING FIRST SETUP
+        // =====================================================
+
+        if (firstTimeAccountSetup) {
 
             if (desiredUsername == null
                     || desiredUsername.isBlank()) {
@@ -320,12 +431,14 @@ public class PasswordResetService {
                 );
             }
 
+
             String chosenUsername =
                     desiredUsername
                             .trim()
                             .toLowerCase(
                                     Locale.ROOT
                             );
+
 
             if (!chosenUsername.matches(
                     "^[a-z0-9._-]{3,50}$"
@@ -336,6 +449,10 @@ public class PasswordResetService {
                 );
             }
 
+
+            /*
+             * Check username uniqueness.
+             */
             userRepository
                     .findByUsername(
                             chosenUsername
@@ -356,23 +473,19 @@ public class PasswordResetService {
                             }
                     );
 
-            String oldPendingUsername =
-                    user.getUsername();
 
             user.setUsername(
                     chosenUsername
             );
 
-            /*
-             * Token belongs to old pending username,
-             * but after verification it will be marked used.
-             */
+
             auditLogService.log(
                     chosenUsername,
-                    "EMPLOYEE_USERNAME_CREATED",
+                    "ACCOUNT_USERNAME_CREATED",
                     "AUTHENTICATION",
                     user.getId(),
-                    "Employee selected username during first-time setup",
+                    accountRole
+                            + " selected username during first-time setup",
                     null
             );
 
@@ -383,16 +496,17 @@ public class PasswordResetService {
         ) {
 
             /*
-             * Real username already exists.
-             * No account may change it through reset flow.
+             * Existing username cannot be changed
+             * through password reset.
              */
             throw new RuntimeException(
-                    "Username can only be selected once during first-time employee setup"
+                    "Username can only be selected once during first-time account setup"
             );
         }
 
+
         // =====================================================
-        // PASSWORD
+        // SET NEW PASSWORD
         // =====================================================
 
         user.setPassword(
@@ -401,25 +515,39 @@ public class PasswordResetService {
                 )
         );
 
+
         userRepository.save(
                 user
         );
+
+
+        // =====================================================
+        // MARK OTP AS USED
+        // =====================================================
 
         resetToken.setUsed(
                 true
         );
 
+
         resetTokenRepository.save(
                 resetToken
         );
 
-        /*
-         * Invalidate logged-in sessions after password change.
-         */
+
+        // =====================================================
+        // REVOKE OLD LOGIN SESSIONS
+        // =====================================================
+
         refreshTokenService
                 .revokeAllForUser(
                         user.getUsername()
                 );
+
+
+        // =====================================================
+        // AUDIT
+        // =====================================================
 
         auditLogService.log(
                 user.getUsername(),
@@ -430,6 +558,7 @@ public class PasswordResetService {
                 null
         );
     }
+
 
     // =========================================================
     // USER RESOLUTION
@@ -445,33 +574,39 @@ public class PasswordResetService {
             return null;
         }
 
-        /*
-         * 1. Username.
-         */
+
+        String normalized =
+                value.trim();
+
+
+        // =====================================================
+        // 1. USERNAME
+        // =====================================================
+
         User user =
                 userRepository
                         .findByUsername(
-                                value
+                                normalized
                         )
                         .orElse(
                                 null
                         );
+
 
         if (user != null) {
 
             return user;
         }
 
-        /*
-         * 2. Employee email has priority.
-         *
-         * Important because Admin and Employee might
-         * share the same recovery email.
-         */
+
+        // =====================================================
+        // 2. EMPLOYEE EMAIL
+        // =====================================================
+
         user =
                 employeeRepository
                         .findByEmail(
-                                value
+                                normalized
                         )
                         .map(
                                 Employee::getUser
@@ -480,21 +615,28 @@ public class PasswordResetService {
                                 null
                         );
 
+
         if (user != null) {
 
             return user;
         }
 
-        /*
-         * 3. Generic recovery email only when exactly
-         * one account matches.
-         */
+
+        // =====================================================
+        // 3. GENERIC RECOVERY EMAIL
+        // =====================================================
+
         List<User> matches =
                 userRepository
                         .findAllByRecoveryEmailIgnoreCase(
-                                value
+                                normalized
                         );
 
+
+        /*
+         * Return account only when there is exactly
+         * one matching recovery email.
+         */
         if (matches.size() == 1) {
 
             return matches.get(
@@ -502,11 +644,13 @@ public class PasswordResetService {
             );
         }
 
+
         return null;
     }
 
+
     // =========================================================
-    // RECOVERY EMAIL
+    // RESOLVE RECOVERY EMAIL
     // =========================================================
 
     private String resolveRecoveryEmail(
@@ -518,6 +662,11 @@ public class PasswordResetService {
             return null;
         }
 
+
+        // =====================================================
+        // USER RECOVERY EMAIL
+        // =====================================================
+
         if (user.getRecoveryEmail() != null
                 &&
                 !user.getRecoveryEmail()
@@ -527,6 +676,11 @@ public class PasswordResetService {
                     .getRecoveryEmail()
                     .trim();
         }
+
+
+        // =====================================================
+        // FALLBACK TO EMPLOYEE EMAIL
+        // =====================================================
 
         return employeeRepository
                 .findByUserUsername(
@@ -539,6 +693,7 @@ public class PasswordResetService {
                         null
                 );
     }
+
 
     // =========================================================
     // PASSWORD VALIDATION
@@ -556,6 +711,7 @@ public class PasswordResetService {
             );
         }
 
+
         if (!password.matches(
                 ".*[A-Z].*"
         )) {
@@ -565,6 +721,7 @@ public class PasswordResetService {
             );
         }
 
+
         if (!password.matches(
                 ".*[a-z].*"
         )) {
@@ -573,6 +730,7 @@ public class PasswordResetService {
                     "Password must contain a lowercase letter"
             );
         }
+
 
         if (!password.matches(
                 ".*\\d.*"
