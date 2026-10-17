@@ -1,0 +1,29 @@
+/* NexusHR global reset — crisp full-screen application canvas */
+:root {
+  font-family: "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeSpeed;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; min-width: 320px; min-height: 100%; margin: 0; }
+html { background: #f4f7fb; }
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  color: #172033;
+  background: #f4f7fb;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+#root {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  border: 0;
+  text-align: left;
+  display: block;
+}
+button, input, select, textarea { font: inherit; }
+a { color: inherit; }
