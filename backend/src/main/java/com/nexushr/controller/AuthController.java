@@ -13,10 +13,11 @@ import com.nexushr.service.RefreshTokenService;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
+import org.springframework.beans.factory.annotation.Value;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 
 import org.springframework.security.authentication.AuthenticationManager;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+
 
 @RestController
 @RequestMapping("/api/auth")
@@ -49,6 +51,18 @@ public class AuthController {
     private final EmployeeRepository employeeRepository;
 
     private final PasswordResetService passwordResetService;
+
+
+    // =========================================================
+    // COOKIE CONFIGURATION
+    // =========================================================
+
+    @Value("${nexushr.auth.cookie.secure:false}")
+    private boolean secureCookie;
+
+    @Value("${nexushr.auth.cookie.same-site:Lax}")
+    private String cookieSameSite;
+
 
     public AuthController(
             AuthenticationManager authenticationManager,
@@ -82,6 +96,7 @@ public class AuthController {
                 passwordResetService;
     }
 
+
     // =========================================================
     // LOGIN
     // USERNAME OR EMPLOYEE EMAIL
@@ -97,6 +112,7 @@ public class AuthController {
                 request.username() == null
                         ? ""
                         : request.username().trim();
+
 
         /*
          * Employee can login using:
@@ -127,6 +143,7 @@ public class AuthController {
                                 loginIdentifier
                         );
 
+
         Authentication authentication =
                 authenticationManager.authenticate(
                         new UsernamePasswordAuthenticationToken(
@@ -135,19 +152,23 @@ public class AuthController {
                         )
                 );
 
+
         UserDetails userDetails =
                 (UserDetails)
                         authentication.getPrincipal();
+
 
         String accessToken =
                 jwtService.generateToken(
                         userDetails
                 );
 
+
         String refreshToken =
                 refreshTokenService.createRefreshToken(
                         userDetails
                 );
+
 
         String role =
                 authentication
@@ -160,10 +181,12 @@ public class AuthController {
                         )
                         .orElse("");
 
+
         Optional<Employee> linkedEmployee =
                 employeeRepository.findByUserUsername(
                         userDetails.getUsername()
                 );
+
 
         auditLogService.log(
                 userDetails.getUsername(),
@@ -176,43 +199,52 @@ public class AuthController {
                 )
         );
 
+
         Map<String, Object> response =
                 new HashMap<>();
+
 
         response.put(
                 "message",
                 "Login successful"
         );
 
+
         response.put(
                 "username",
                 userDetails.getUsername()
         );
+
 
         response.put(
                 "role",
                 role
         );
 
+
         response.put(
                 "token",
                 accessToken
         );
+
 
         response.put(
                 "refreshToken",
                 refreshToken
         );
 
+
         if (linkedEmployee.isPresent()) {
 
             Employee employee =
                     linkedEmployee.get();
 
+
             response.put(
                     "employeeId",
                     employee.getId()
             );
+
 
             response.put(
                     "employeeName",
@@ -221,55 +253,66 @@ public class AuthController {
                     )
             );
 
+
             response.put(
                     "employeeEmail",
                     employee.getEmail()
             );
+
 
             response.put(
                     "email",
                     employee.getEmail()
             );
 
+
             response.put(
                     "firstName",
                     employee.getFirstName()
             );
+
 
             response.put(
                     "lastName",
                     employee.getLastName()
             );
 
+
             response.put(
                     "department",
                     employee.getDepartment()
             );
+
 
             response.put(
                     "jobTitle",
                     employee.getJobTitle()
             );
 
+
             response.put(
                     "joiningDate",
                     employee.getJoiningDate()
             );
+
 
             response.put(
                     "salary",
                     employee.getSalary()
             );
 
+
             response.put(
                     "employmentStatus",
                     employee.getEmploymentStatus()
             );
 
+
             response.put(
                     "approvalStatus",
                     employee.getApprovalStatus()
             );
+
 
             response.put(
                     "linked",
@@ -283,18 +326,31 @@ public class AuthController {
                     null
             );
 
+
             response.put(
                     "linked",
                     false
             );
         }
 
-        ResponseCookie accessCookie = buildAccessCookie(accessToken);
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
-                .body(response);
+        ResponseCookie accessCookie =
+                buildAccessCookie(
+                        accessToken
+                );
+
+
+        return ResponseEntity
+                .ok()
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        accessCookie.toString()
+                )
+                .body(
+                        response
+                );
     }
+
 
     // =========================================================
     // FORGOT PASSWORD
@@ -317,6 +373,7 @@ public class AuthController {
                 request.usernameOrEmail()
         );
 
+
         return ResponseEntity.ok(
                 Map.of(
                         "message",
@@ -324,6 +381,7 @@ public class AuthController {
                 )
         );
     }
+
 
     // =========================================================
     // RESET PASSWORD
@@ -351,6 +409,7 @@ public class AuthController {
                     request.desiredUsername()
             );
 
+
             return ResponseEntity.ok(
                     Map.of(
                             "message",
@@ -363,10 +422,12 @@ public class AuthController {
             Map<String, String> response =
                     new HashMap<>();
 
+
             response.put(
                     "message",
                     exception.getMessage()
             );
+
 
             return ResponseEntity
                     .badRequest()
@@ -375,6 +436,7 @@ public class AuthController {
                     );
         }
     }
+
 
     // =========================================================
     // CURRENT USER
@@ -388,8 +450,10 @@ public class AuthController {
         Map<String, Object> response =
                 new HashMap<>();
 
+
         String username =
                 authentication.getName();
+
 
         String role =
                 authentication
@@ -402,40 +466,48 @@ public class AuthController {
                         )
                         .orElse("");
 
+
         response.put(
                 "username",
                 username
         );
+
 
         response.put(
                 "role",
                 role
         );
 
+
         Optional<Employee> linkedEmployee =
                 employeeRepository.findByUserUsername(
                         username
                 );
+
 
         if (linkedEmployee.isPresent()) {
 
             Employee employee =
                     linkedEmployee.get();
 
+
             response.put(
                     "employeeId",
                     employee.getId()
             );
+
 
             response.put(
                     "firstName",
                     employee.getFirstName()
             );
 
+
             response.put(
                     "lastName",
                     employee.getLastName()
             );
+
 
             response.put(
                     "employeeName",
@@ -444,45 +516,54 @@ public class AuthController {
                     )
             );
 
+
             response.put(
                     "email",
                     employee.getEmail()
             );
+
 
             response.put(
                     "phone",
                     employee.getPhone()
             );
 
+
             response.put(
                     "department",
                     employee.getDepartment()
             );
+
 
             response.put(
                     "jobTitle",
                     employee.getJobTitle()
             );
 
+
             response.put(
                     "joiningDate",
                     employee.getJoiningDate()
             );
+
 
             response.put(
                     "salary",
                     employee.getSalary()
             );
 
+
             response.put(
                     "employmentStatus",
                     employee.getEmploymentStatus()
             );
 
+
             response.put(
                     "approvalStatus",
                     employee.getApprovalStatus()
             );
+
 
             response.put(
                     "linked",
@@ -496,16 +577,19 @@ public class AuthController {
                     null
             );
 
+
             response.put(
                     "linked",
                     false
             );
         }
 
+
         return ResponseEntity.ok(
                 response
         );
     }
+
 
     // =========================================================
     // REFRESH TOKEN
@@ -524,24 +608,29 @@ public class AuthController {
                             request.refreshToken()
                     );
 
+
             UserDetails userDetails =
                     userDetailsService.loadUserByUsername(
                             storedToken.getUsername()
                     );
+
 
             String newAccessToken =
                     jwtService.generateToken(
                             userDetails
                     );
 
+
             String newRefreshToken =
                     refreshTokenService.createRefreshToken(
                             userDetails
                     );
 
+
             refreshTokenService.revokeToken(
                     request.refreshToken()
             );
+
 
             String role =
                     userDetails
@@ -554,10 +643,12 @@ public class AuthController {
                             )
                             .orElse("");
 
+
             Optional<Employee> linkedEmployee =
                     employeeRepository.findByUserUsername(
                             userDetails.getUsername()
                     );
+
 
             auditLogService.log(
                     userDetails.getUsername(),
@@ -570,46 +661,56 @@ public class AuthController {
                     )
             );
 
+
             Map<String, Object> response =
                     new HashMap<>();
+
 
             /*
              * Required by API contract and existing tests.
              */
+
             response.put(
                     "message",
                     "Token refreshed successfully"
             );
+
 
             response.put(
                     "token",
                     newAccessToken
             );
 
+
             response.put(
                     "refreshToken",
                     newRefreshToken
             );
+
 
             response.put(
                     "username",
                     userDetails.getUsername()
             );
 
+
             response.put(
                     "role",
                     role
             );
+
 
             if (linkedEmployee.isPresent()) {
 
                 Employee employee =
                         linkedEmployee.get();
 
+
                 response.put(
                         "employeeId",
                         employee.getId()
                 );
+
 
                 response.put(
                         "employeeName",
@@ -618,15 +719,18 @@ public class AuthController {
                         )
                 );
 
+
                 response.put(
                         "employeeEmail",
                         employee.getEmail()
                 );
 
+
                 response.put(
                         "department",
                         employee.getDepartment()
                 );
+
 
                 response.put(
                         "jobTitle",
@@ -641,21 +745,34 @@ public class AuthController {
                 );
             }
 
-            ResponseCookie accessCookie = buildAccessCookie(newAccessToken);
 
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
-                    .body(response);
+            ResponseCookie accessCookie =
+                    buildAccessCookie(
+                            newAccessToken
+                    );
+
+
+            return ResponseEntity
+                    .ok()
+                    .header(
+                            HttpHeaders.SET_COOKIE,
+                            accessCookie.toString()
+                    )
+                    .body(
+                            response
+                    );
 
         } catch (RuntimeException exception) {
 
             Map<String, Object> response =
                     new HashMap<>();
 
+
             response.put(
                     "message",
                     exception.getMessage()
             );
+
 
             return ResponseEntity
                     .status(
@@ -666,6 +783,7 @@ public class AuthController {
                     );
         }
     }
+
 
     // =========================================================
     // LOGOUT
@@ -679,11 +797,13 @@ public class AuthController {
             HttpServletRequest httpRequest
     ) {
 
-        if (request != null
-                &&
-                request.refreshToken() != null
-                &&
-                !request.refreshToken().isBlank()) {
+        if (
+                request != null
+                        &&
+                        request.refreshToken() != null
+                        &&
+                        !request.refreshToken().isBlank()
+        ) {
 
             try {
 
@@ -699,9 +819,12 @@ public class AuthController {
             }
         }
 
-        if (authentication != null
-                &&
-                authentication.isAuthenticated()) {
+
+        if (
+                authentication != null
+                        &&
+                        authentication.isAuthenticated()
+        ) {
 
             auditLogService.log(
                     authentication.getName(),
@@ -715,10 +838,17 @@ public class AuthController {
             );
         }
 
-        ResponseCookie clearedAccessCookie = clearAccessCookie();
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, clearedAccessCookie.toString())
+        ResponseCookie clearedAccessCookie =
+                clearAccessCookie();
+
+
+        return ResponseEntity
+                .ok()
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        clearedAccessCookie.toString()
+                )
                 .body(
                         Map.of(
                                 "message",
@@ -726,6 +856,7 @@ public class AuthController {
                         )
                 );
     }
+
 
     // =========================================================
     // BACKWARD-COMPATIBLE LOGOUT
@@ -744,9 +875,11 @@ public class AuthController {
                         ? null
                         : request.refreshToken();
 
+
         refreshTokenService.revokeToken(
                 refreshToken
         );
+
 
         auditLogService.log(
                 "LOGOUT",
@@ -758,18 +891,22 @@ public class AuthController {
                 )
         );
 
+
         Map<String, Object> response =
                 new HashMap<>();
+
 
         response.put(
                 "message",
                 "Logout successful"
         );
 
+
         return ResponseEntity.ok(
                 response
         );
     }
+
 
     // =========================================================
     // HELPERS
@@ -786,12 +923,14 @@ public class AuthController {
                         .getFirstName()
                         .trim();
 
+
         String lastName =
                 employee.getLastName() == null
                         ? ""
                         : employee
                         .getLastName()
                         .trim();
+
 
         return (
                 firstName
@@ -800,25 +939,66 @@ public class AuthController {
         ).trim();
     }
 
-    private ResponseCookie buildAccessCookie(String accessToken) {
-        return ResponseCookie.from("nexushr_access_token", accessToken)
+
+    // =========================================================
+    // ACCESS TOKEN COOKIE
+    //
+    // LOCAL:
+    // secure=false
+    // SameSite=Lax
+    //
+    // RENDER:
+    // secure=true
+    // SameSite=None
+    // =========================================================
+
+    private ResponseCookie buildAccessCookie(
+            String accessToken
+    ) {
+
+        return ResponseCookie
+                .from(
+                        "nexushr_access_token",
+                        accessToken
+                )
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(
+                        secureCookie
+                )
+                .sameSite(
+                        cookieSameSite
+                )
                 .path("/")
-                .maxAge(24 * 60 * 60)
+                .maxAge(
+                        24 * 60 * 60
+                )
                 .build();
     }
 
+
     private ResponseCookie clearAccessCookie() {
-        return ResponseCookie.from("nexushr_access_token", "")
+
+        return ResponseCookie
+                .from(
+                        "nexushr_access_token",
+                        ""
+                )
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(
+                        secureCookie
+                )
+                .sameSite(
+                        cookieSameSite
+                )
                 .path("/")
                 .maxAge(0)
                 .build();
     }
+
+
+    // =========================================================
+    // CLIENT IP ADDRESS
+    // =========================================================
 
     private String getClientIpAddress(
             HttpServletRequest request
@@ -828,22 +1008,28 @@ public class AuthController {
             return null;
         }
 
+
         String forwarded =
                 request.getHeader(
                         "X-Forwarded-For"
                 );
 
-        if (forwarded != null
-                &&
-                !forwarded.isBlank()) {
+
+        if (
+                forwarded != null
+                        &&
+                        !forwarded.isBlank()
+        ) {
 
             return forwarded
                     .split(",")[0]
                     .trim();
         }
 
+
         return request.getRemoteAddr();
     }
+
 
     // =========================================================
     // REQUEST DTOs
@@ -855,20 +1041,24 @@ public class AuthController {
     ) {
     }
 
+
     public record RefreshRequest(
             String refreshToken
     ) {
     }
+
 
     public record LogoutRequest(
             String refreshToken
     ) {
     }
 
+
     public record ForgotPasswordRequest(
             String usernameOrEmail
     ) {
     }
+
 
     public record ResetPasswordRequest(
             String username,

@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import org.springframework.http.HttpMethod;
+
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.security.authentication.AuthenticationManager;
@@ -37,25 +38,25 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 
+
 @EnableMethodSecurity
 @Configuration
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter
-            jwtAuthenticationFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Value(
             "${nexushr.cors.allowed-origins:http://localhost:5173,http://localhost}"
     )
     private String allowedOrigins;
 
+
     public SecurityConfig(
             JwtAuthenticationFilter jwtAuthenticationFilter
     ) {
-
-        this.jwtAuthenticationFilter =
-                jwtAuthenticationFilter;
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
     }
+
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -63,14 +64,15 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration
     ) throws Exception {
 
-        return configuration
-                .getAuthenticationManager();
+        return configuration.getAuthenticationManager();
     }
+
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -79,10 +81,18 @@ public class SecurityConfig {
 
         http
 
+                // =====================================================
+                // CSRF
+                // =====================================================
+
                 .csrf(
-                        csrf ->
-                                csrf.disable()
+                        csrf -> csrf.disable()
                 )
+
+
+                // =====================================================
+                // CORS
+                // =====================================================
 
                 .cors(
                         cors ->
@@ -91,6 +101,12 @@ public class SecurityConfig {
                                 )
                 )
 
+
+                // =====================================================
+                // SESSION
+                // JWT based stateless security
+                // =====================================================
+
                 .sessionManagement(
                         session ->
                                 session.sessionCreationPolicy(
@@ -98,64 +114,117 @@ public class SecurityConfig {
                                 )
                 )
 
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, authException) -> {
-                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                            response.setContentType("application/json");
-                            response.getWriter().write(
-                                    "{\"message\":\"Authentication required or token is invalid.\"}"
-                            );
-                        })
-                        .accessDeniedHandler((request, response, accessDeniedException) -> {
-                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                            response.setContentType("application/json");
-                            response.getWriter().write(
-                                    "{\"message\":\"Access denied for the current role.\"}"
-                            );
-                        })
+
+                // =====================================================
+                // AUTHENTICATION / AUTHORIZATION ERRORS
+                // =====================================================
+
+                .exceptionHandling(
+                        exceptions -> exceptions
+
+                                .authenticationEntryPoint(
+                                        (
+                                                request,
+                                                response,
+                                                authException
+                                        ) -> {
+
+                                            response.setStatus(
+                                                    HttpServletResponse.SC_UNAUTHORIZED
+                                            );
+
+                                            response.setContentType(
+                                                    "application/json"
+                                            );
+
+                                            response.getWriter().write(
+                                                    "{\"message\":\"Authentication required or token is invalid.\"}"
+                                            );
+                                        }
+                                )
+
+                                .accessDeniedHandler(
+                                        (
+                                                request,
+                                                response,
+                                                accessDeniedException
+                                        ) -> {
+
+                                            response.setStatus(
+                                                    HttpServletResponse.SC_FORBIDDEN
+                                            );
+
+                                            response.setContentType(
+                                                    "application/json"
+                                            );
+
+                                            response.getWriter().write(
+                                                    "{\"message\":\"Access denied for the current role.\"}"
+                                            );
+                                        }
+                                )
                 )
+
+
+                // =====================================================
+                // AUTHORIZATION RULES
+                // =====================================================
 
                 .authorizeHttpRequests(
                         auth -> auth
 
-                                // ==============================
-                                // PUBLIC
-                                // ==============================
+
+                                // =================================================
+                                // PUBLIC ENDPOINTS
+                                // =================================================
 
                                 .requestMatchers(
+
                                         "/api/health",
+
                                         "/api/auth/login",
+
                                         "/api/auth/refresh",
+
                                         "/api/auth/logout",
+
                                         "/api/auth/forgot-password",
+
                                         "/api/auth/reset-password",
+
                                         "/api/public/**",
+
                                         "/actuator/health",
+
                                         "/error"
                                 )
                                 .permitAll()
 
-                                // ==============================
-                                // CURRENT USER
-                                // ==============================
+
+                                // =================================================
+                                // CURRENT LOGGED-IN USER
+                                // =================================================
 
                                 .requestMatchers(
                                         "/api/auth/me"
                                 )
                                 .authenticated()
 
-                                // ==============================
-                                // AUTHENTICATED SELF SERVICE
-                                // ==============================
+
+                                // =================================================
+                                // SELF SERVICE
+                                // =================================================
 
                                 .requestMatchers(
                                         "/api/me/**"
                                 )
                                 .authenticated()
 
-                                // ==============================
+
+                                // =================================================
                                 // USER MANAGEMENT
-                                // ==============================
+                                // ADMIN ONLY
+                                // =================================================
 
                                 .requestMatchers(
                                         "/api/users/**"
@@ -164,9 +233,11 @@ public class SecurityConfig {
                                         "ADMIN"
                                 )
 
-                                // ==============================
+
+                                // =================================================
                                 // AUDIT LOGS
-                                // ==============================
+                                // ADMIN / HR
+                                // =================================================
 
                                 .requestMatchers(
                                         "/api/audit-logs/**"
@@ -176,9 +247,11 @@ public class SecurityConfig {
                                         "HR"
                                 )
 
-                                // ==============================
+
+                                // =================================================
                                 // EMPLOYEE DOCUMENTS
-                                // ==============================
+                                // ADMIN / HR / MANAGER
+                                // =================================================
 
                                 .requestMatchers(
                                         "/api/employees/*/documents/**"
@@ -189,9 +262,11 @@ public class SecurityConfig {
                                         "MANAGER"
                                 )
 
-                                // ==============================
+
+                                // =================================================
                                 // EMPLOYEE READ
-                                // ==============================
+                                // ADMIN / HR / MANAGER
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.GET,
@@ -203,23 +278,13 @@ public class SecurityConfig {
                                         "MANAGER"
                                 )
 
-                                // ==============================
-                                // EMPLOYEE DELETE
-                                // ADMIN + MANAGER
-                                // ==============================
 
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/employees/**"
-                                )
-                                .hasAnyRole(
-                                        "ADMIN",
-                                        "MANAGER"
-                                )
-
-                                // ==============================
+                                // =================================================
                                 // EMPLOYEE CREATE
-                                // ==============================
+                                // ADMIN / HR ONLY
+                                //
+                                // MANAGER CANNOT CREATE EMPLOYEES
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.POST,
@@ -230,9 +295,14 @@ public class SecurityConfig {
                                         "HR"
                                 )
 
-                                // ==============================
+
+                                // =================================================
                                 // EMPLOYEE UPDATE
-                                // ==============================
+                                //
+                                // ADMIN / HR / MANAGER
+                                //
+                                // Manager is allowed to edit employee details
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.PUT,
@@ -240,19 +310,58 @@ public class SecurityConfig {
                                 )
                                 .hasAnyRole(
                                         "ADMIN",
-                                        "HR"
+                                        "HR",
+                                        "MANAGER"
                                 )
 
-                                // ==============================
+
+                                // PATCH support
+                                // Useful if frontend uses PATCH later
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/employees/**"
+                                )
+                                .hasAnyRole(
+                                        "ADMIN",
+                                        "HR",
+                                        "MANAGER"
+                                )
+
+
+                                // =================================================
+                                // EMPLOYEE DELETE
+                                //
+                                // ADMIN ONLY
+                                //
+                                // Manager MUST NOT delete employees
+                                // =================================================
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/employees/**"
+                                )
+                                .hasRole(
+                                        "ADMIN"
+                                )
+
+
+                                // =================================================
                                 // ATTENDANCE SELF SERVICE
-                                // ==============================
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.POST,
+
                                         "/api/attendance/check-in/**",
+
                                         "/api/attendance/check-out/**"
                                 )
                                 .authenticated()
+
+
+                                // =================================================
+                                // EMPLOYEE ATTENDANCE HISTORY
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.GET,
@@ -260,9 +369,12 @@ public class SecurityConfig {
                                 )
                                 .authenticated()
 
-                                // ==============================
-                                // ATTENDANCE MANAGEMENT
-                                // ==============================
+
+                                // =================================================
+                                // ATTENDANCE MANAGEMENT - READ
+                                //
+                                // ADMIN / HR / MANAGER
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.GET,
@@ -274,6 +386,13 @@ public class SecurityConfig {
                                         "MANAGER"
                                 )
 
+
+                                // =================================================
+                                // ATTENDANCE MANAGEMENT - CREATE
+                                //
+                                // ADMIN / HR / MANAGER
+                                // =================================================
+
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/attendance/**"
@@ -284,6 +403,13 @@ public class SecurityConfig {
                                         "MANAGER"
                                 )
 
+
+                                // =================================================
+                                // ATTENDANCE UPDATE
+                                //
+                                // ADMIN / HR
+                                // =================================================
+
                                 .requestMatchers(
                                         HttpMethod.PUT,
                                         "/api/attendance/**"
@@ -292,6 +418,13 @@ public class SecurityConfig {
                                         "ADMIN",
                                         "HR"
                                 )
+
+
+                                // =================================================
+                                // ATTENDANCE DELETE
+                                //
+                                // ADMIN / HR
+                                // =================================================
 
                                 .requestMatchers(
                                         HttpMethod.DELETE,
@@ -302,56 +435,86 @@ public class SecurityConfig {
                                         "HR"
                                 )
 
-                                // ==============================
-                                // EVERYTHING ELSE
-                                // ==============================
+
+                                // =================================================
+                                // ALL OTHER API ENDPOINTS
+                                // =================================================
 
                                 .requestMatchers(
                                         "/api/**"
                                 )
                                 .authenticated()
 
+
+                                // =================================================
+                                // EVERYTHING ELSE
+                                // =================================================
+
                                 .anyRequest()
                                 .authenticated()
                 )
+
+
+                // =====================================================
+                // JWT FILTER
+                // =====================================================
 
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
                 );
 
+
         return http.build();
     }
 
-    // =========================================================
-    // CORS
-    // =========================================================
+
+    // =============================================================
+    // CORS CONFIGURATION
+    // =============================================================
 
     @Bean
-    public CorsConfigurationSource
-    corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource() {
 
         CorsConfiguration configuration =
                 new CorsConfiguration();
 
+
+        // ---------------------------------------------------------
+        // Read comma-separated allowed origins from environment
+        //
+        // Local:
+        // http://localhost:5173,http://localhost
+        //
+        // Render:
+        // https://your-frontend.onrender.com
+        // ---------------------------------------------------------
+
         List<String> origins =
                 Arrays.stream(
-                                allowedOrigins.split(
-                                        ","
-                                )
+                                allowedOrigins.split(",")
                         )
+
                         .map(
                                 String::trim
                         )
+
                         .filter(
                                 origin ->
                                         !origin.isBlank()
                         )
+
                         .toList();
+
 
         configuration.setAllowedOrigins(
                 origins
         );
+
+
+        // ---------------------------------------------------------
+        // HTTP METHODS
+        // ---------------------------------------------------------
 
         configuration.setAllowedMethods(
                 List.of(
@@ -364,23 +527,40 @@ public class SecurityConfig {
                 )
         );
 
+
+        // ---------------------------------------------------------
+        // REQUEST HEADERS
+        // ---------------------------------------------------------
+
         configuration.setAllowedHeaders(
                 List.of(
                         "*"
                 )
         );
 
+
+        // ---------------------------------------------------------
+        // AUTHORIZATION / CREDENTIAL SUPPORT
+        // ---------------------------------------------------------
+
         configuration.setAllowCredentials(
                 true
         );
 
+
+        // ---------------------------------------------------------
+        // REGISTER CORS FOR ALL ENDPOINTS
+        // ---------------------------------------------------------
+
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
+
 
         source.registerCorsConfiguration(
                 "/**",
                 configuration
         );
+
 
         return source;
     }
