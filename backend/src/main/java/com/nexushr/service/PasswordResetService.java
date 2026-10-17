@@ -163,12 +163,29 @@ public class PasswordResetService {
                         + " minutes."
                         + "\n\nIf you did not request this reset, ignore this email.";
 
-        emailNotificationService
-                .sendToAddress(
+        EmailNotificationService.DeliveryResult deliveryResult =
+                emailNotificationService.sendToAddress(
                         recoveryEmail,
                         "NexusHR Password Reset",
                         message
                 );
+
+        System.out.println(
+                "[PASSWORD RESET EMAIL] Status="
+                        + deliveryResult.status()
+                        + " Message="
+                        + deliveryResult.message()
+        );
+
+        if (!"SENT".equalsIgnoreCase(
+                deliveryResult.status()
+        )) {
+
+            System.err.println(
+                    "[PASSWORD RESET EMAIL FAILED] "
+                            + deliveryResult.message()
+            );
+        }
 
         auditLogService.log(
                 user.getUsername(),
