@@ -33,19 +33,24 @@ public class EmployeeDTO {
 
     private String employmentStatus;
 
-    /*
-     * Employee lifecycle approval status.
-     *
-     * PENDING  -> waiting for approval
-     * APPROVED -> approval completed
-     * REJECTED -> approval denied
-     */
     private String approvalStatus;
 
     /*
-     * Safe login-account information.
+     * Login account role.
      *
-     * Password is deliberately NOT exposed.
+     * Supported:
+     * EMPLOYEE
+     * MANAGER
+     * HR
+     *
+     * ADMIN is intentionally not created
+     * through normal employee creation.
+     */
+    private String role;
+
+    /*
+     * Safe login-account information.
+     * Password is never exposed.
      */
     private Long userId;
 
@@ -164,6 +169,14 @@ public class EmployeeDTO {
 
     public void setApprovalStatus(String approvalStatus) {
         this.approvalStatus = approvalStatus;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 
     public Long getUserId() {

@@ -21,21 +21,25 @@ import java.util.stream.Collectors;
 public class EmployeeService {
 
     private final EmployeeRepository employeeRepository;
+
     private final UserRepository userRepository;
+
     private final PasswordEncoder passwordEncoder;
+
     private final AuditLogService auditLogService;
+
 
     /*
      * Runtime SQL bridge used for permanent deletion.
      *
-     * The database migration already owns the ON DELETE CASCADE rules.
-     * Using the same explicit SQL order that is validated against PostgreSQL
-     * avoids persistence-context ordering problems during hard deletes.
-     * Unit tests that instantiate the service directly continue to use the
-     * repository fallback below.
+     * The database migration owns the ON DELETE CASCADE rules.
+     *
+     * Explicit SQL ordering avoids persistence-context problems
+     * during permanent employee deletion.
      */
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+
 
     public EmployeeService(
             EmployeeRepository employeeRepository,
@@ -57,6 +61,7 @@ public class EmployeeService {
                 auditLogService;
     }
 
+
     // =========================================================
     // CREATE EMPLOYEE
     // =========================================================
@@ -66,22 +71,31 @@ public class EmployeeService {
             EmployeeDTO dto
     ) {
 
-        if (dto.getEmail() == null
-                || dto.getEmail().isBlank()) {
+        if (
+                dto.getEmail() == null
+                        ||
+                        dto.getEmail().isBlank()
+        ) {
 
             throw new RuntimeException(
                     "Employee email is required"
             );
         }
 
+
         String normalizedEmail =
                 dto.getEmail()
                         .trim()
                         .toLowerCase();
 
-        if (employeeRepository
-                .findByEmail(normalizedEmail)
-                .isPresent()) {
+
+        if (
+                employeeRepository
+                        .findByEmail(
+                                normalizedEmail
+                        )
+                        .isPresent()
+        ) {
 
             throw new RuntimeException(
                     "Employee with email "
@@ -90,73 +104,95 @@ public class EmployeeService {
             );
         }
 
+
         Employee employee =
                 new Employee();
+
 
         employee.setFirstName(
                 dto.getFirstName()
         );
 
+
         employee.setLastName(
                 dto.getLastName()
         );
+
 
         employee.setEmail(
                 normalizedEmail
         );
 
+
         employee.setPhone(
                 dto.getPhone()
         );
+
 
         employee.setDepartment(
                 dto.getDepartment()
         );
 
+
         employee.setJobTitle(
                 dto.getJobTitle()
         );
+
 
         employee.setJoiningDate(
                 dto.getJoiningDate()
         );
 
+
         employee.setSalary(
                 dto.getSalary()
         );
 
+
         employee.setEmploymentStatus(
                 dto.getEmploymentStatus() != null
+                        &&
+                        !dto.getEmploymentStatus().isBlank()
+
                         ? dto.getEmploymentStatus()
+                        .trim()
                         .toUpperCase()
+
                         : "ACTIVE"
         );
+
 
         employee.setApprovalStatus(
                 "PENDING"
         );
 
-        /*
-         * Create an internal login account.
-         *
-         * The employee DOES NOT choose this username.
-         * It exists only so that OTP setup can work.
-         *
-         * The employee will replace it exactly once
-         * during first-time account setup.
-         */
+
+        // =====================================================
+        // CREATE LINKED LOGIN ACCOUNT
+        // =====================================================
+
         User user =
                 new User();
 
+
+        /*
+         * Internal pending username.
+         *
+         * Employee/Manager/HR will choose their username
+         * during first-time password setup.
+         */
         user.setUsername(
                 generatePendingUsername()
         );
 
+
         /*
          * Internal bootstrap password.
          *
-         * Nobody knows or uses this password.
-         * Employee creates their own password via OTP.
+         * This password is never given to the user.
+         *
+         * The user creates their actual password during
+         * first-time account setup / password reset.
          */
         user.setPassword(
                 passwordEncoder.encode(
@@ -166,31 +202,57 @@ public class EmployeeService {
                 )
         );
 
+
+        /*
+         * IMPORTANT:
+         *
+         * Previously every user was always created as:
+         *
+         * EMPLOYEE
+         *
+         * Now the role supplied by Admin is respected.
+         *
+         * Allowed:
+         *
+         * EMPLOYEE
+         * MANAGER
+         * HR
+         *
+         * ADMIN is intentionally not allowed here.
+         */
         user.setRole(
-                "EMPLOYEE"
+                normalizeRequestedRole(
+                        dto.getRole()
+                )
         );
+
 
         user.setEnabled(
                 true
         );
 
+
         user.setRecoveryEmail(
                 normalizedEmail
         );
+
 
         User savedUser =
                 userRepository.save(
                         user
                 );
 
+
         employee.setUser(
                 savedUser
         );
+
 
         Employee saved =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_CREATED",
@@ -200,15 +262,23 @@ public class EmployeeService {
                         + saved.getFirstName()
                         + " "
                         + saved.getLastName()
+                        + " | Role: "
+                        + savedUser.getRole()
         );
+
 
         return convertToDTO(
                 saved
         );
     }
 
+
     // =========================================================
-    // MANUAL ONBOARDING DISABLED
+    // MANUAL ONBOARDING
+    //
+    // Controller currently blocks this endpoint.
+    //
+    // Kept for backward compatibility / internal use.
     // =========================================================
 
     @Transactional
@@ -230,37 +300,53 @@ public class EmployeeService {
                                 )
                         );
 
-        if (employee.getUser() != null) {
+
+        if (
+                employee.getUser()
+                        != null
+        ) {
 
             throw new RuntimeException(
                     "Employee already has a login account"
             );
         }
 
-        if (username == null
-                || username.trim().isEmpty()) {
+
+        if (
+                username == null
+                        ||
+                        username.trim().isEmpty()
+        ) {
 
             throw new RuntimeException(
                     "Username is required"
             );
         }
 
-        if (temporaryPassword == null
-                || temporaryPassword.isBlank()) {
+
+        if (
+                temporaryPassword == null
+                        ||
+                        temporaryPassword.isBlank()
+        ) {
 
             throw new RuntimeException(
                     "Temporary password is required"
             );
         }
 
+
         String normalizedUsername =
                 username.trim();
 
-        if (userRepository
-                .findByUsername(
-                        normalizedUsername
-                )
-                .isPresent()) {
+
+        if (
+                userRepository
+                        .findByUsername(
+                                normalizedUsername
+                        )
+                        .isPresent()
+        ) {
 
             throw new RuntimeException(
                     "Username "
@@ -269,12 +355,15 @@ public class EmployeeService {
             );
         }
 
+
         User user =
                 new User();
+
 
         user.setUsername(
                 normalizedUsername
         );
+
 
         user.setPassword(
                 passwordEncoder.encode(
@@ -282,38 +371,55 @@ public class EmployeeService {
                 )
         );
 
+
+        /*
+         * This method is legacy/manual onboarding.
+         *
+         * Since the active controller has disabled manual
+         * onboarding, keep EMPLOYEE here for compatibility.
+         */
         user.setRole(
                 "EMPLOYEE"
         );
+
 
         user.setEnabled(
                 true
         );
 
-        if (employee.getEmail() != null) {
+
+        if (
+                employee.getEmail()
+                        != null
+        ) {
 
             user.setRecoveryEmail(
                     employee.getEmail()
             );
         }
 
+
         User savedUser =
                 userRepository.save(
                         user
                 );
 
+
         employee.setUser(
                 savedUser
         );
+
 
         employee.setEmploymentStatus(
                 "ACTIVE"
         );
 
+
         Employee savedEmployee =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_ONBOARDED",
@@ -323,11 +429,14 @@ public class EmployeeService {
                         + normalizedUsername
         );
 
+
         return convertToDTO(
                 savedEmployee
         );
     }
-// =========================================================
+
+
+    // =========================================================
     // APPROVE EMPLOYEE
     // =========================================================
 
@@ -341,32 +450,41 @@ public class EmployeeService {
                         employeeId
                 );
 
-        if ("APPROVED".equalsIgnoreCase(
-                employee.getApprovalStatus()
-        )) {
+
+        if (
+                "APPROVED".equalsIgnoreCase(
+                        employee.getApprovalStatus()
+                )
+        ) {
 
             throw new RuntimeException(
                     "Employee is already approved"
             );
         }
 
-        if ("REJECTED".equalsIgnoreCase(
-                employee.getApprovalStatus()
-        )) {
+
+        if (
+                "REJECTED".equalsIgnoreCase(
+                        employee.getApprovalStatus()
+                )
+        ) {
 
             throw new RuntimeException(
                     "Rejected employee cannot be approved directly"
             );
         }
 
+
         employee.setApprovalStatus(
                 "APPROVED"
         );
+
 
         Employee saved =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_APPROVED",
@@ -375,10 +493,12 @@ public class EmployeeService {
                 "Employee approval completed"
         );
 
+
         return convertToDTO(
                 saved
         );
     }
+
 
     // =========================================================
     // REJECT EMPLOYEE
@@ -394,32 +514,41 @@ public class EmployeeService {
                         employeeId
                 );
 
-        if ("REJECTED".equalsIgnoreCase(
-                employee.getApprovalStatus()
-        )) {
+
+        if (
+                "REJECTED".equalsIgnoreCase(
+                        employee.getApprovalStatus()
+                )
+        ) {
 
             throw new RuntimeException(
                     "Employee is already rejected"
             );
         }
 
-        if ("APPROVED".equalsIgnoreCase(
-                employee.getApprovalStatus()
-        )) {
+
+        if (
+                "APPROVED".equalsIgnoreCase(
+                        employee.getApprovalStatus()
+                )
+        ) {
 
             throw new RuntimeException(
                     "Approved employee cannot be rejected"
             );
         }
 
+
         employee.setApprovalStatus(
                 "REJECTED"
         );
+
 
         Employee saved =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_REJECTED",
@@ -428,13 +557,15 @@ public class EmployeeService {
                 "Employee approval rejected"
         );
 
+
         return convertToDTO(
                 saved
         );
     }
 
+
     // =========================================================
-    // OFFBOARD
+    // OFFBOARD EMPLOYEE
     // =========================================================
 
     @Transactional
@@ -447,26 +578,34 @@ public class EmployeeService {
                         employeeId
                 );
 
+
         employee.setEmploymentStatus(
                 "INACTIVE"
         );
 
-        if (employee.getUser() != null) {
+
+        if (
+                employee.getUser()
+                        != null
+        ) {
 
             employee.getUser()
                     .setEnabled(
                             false
                     );
 
+
             userRepository.save(
                     employee.getUser()
             );
         }
 
+
         Employee saved =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_OFFBOARDED",
@@ -475,13 +614,15 @@ public class EmployeeService {
                 "Employee offboarded"
         );
 
+
         return convertToDTO(
                 saved
         );
     }
 
+
     // =========================================================
-    // REACTIVATE
+    // REACTIVATE EMPLOYEE
     // =========================================================
 
     @Transactional
@@ -494,26 +635,34 @@ public class EmployeeService {
                         employeeId
                 );
 
+
         employee.setEmploymentStatus(
                 "ACTIVE"
         );
 
-        if (employee.getUser() != null) {
+
+        if (
+                employee.getUser()
+                        != null
+        ) {
 
             employee.getUser()
                     .setEnabled(
                             true
                     );
 
+
             userRepository.save(
                     employee.getUser()
             );
         }
 
+
         Employee saved =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_REACTIVATED",
@@ -522,13 +671,15 @@ public class EmployeeService {
                 "Employee reactivated"
         );
 
+
         return convertToDTO(
                 saved
         );
     }
 
+
     // =========================================================
-    // GET ALL
+    // GET ALL EMPLOYEES
     // =========================================================
 
     public List<EmployeeDTO> getAllEmployees() {
@@ -544,8 +695,9 @@ public class EmployeeService {
                 );
     }
 
+
     // =========================================================
-    // GET BY ID
+    // GET EMPLOYEE BY ID
     // =========================================================
 
     public EmployeeDTO getEmployeeById(
@@ -559,33 +711,54 @@ public class EmployeeService {
         );
     }
 
+
     // =========================================================
-    // GET BY EMAIL
+    // GET EMPLOYEE BY EMAIL
     // =========================================================
 
     public EmployeeDTO getEmployeeByEmail(
             String email
     ) {
 
+        if (
+                email == null
+                        ||
+                        email.isBlank()
+        ) {
+
+            throw new RuntimeException(
+                    "Employee email is required"
+            );
+        }
+
+
+        String normalizedEmail =
+                email
+                        .trim()
+                        .toLowerCase();
+
+
         Employee employee =
                 employeeRepository
                         .findByEmail(
-                                email
+                                normalizedEmail
                         )
                         .orElseThrow(() ->
                                 new RuntimeException(
                                         "Employee not found with email: "
-                                                + email
+                                                + normalizedEmail
                                 )
                         );
+
 
         return convertToDTO(
                 employee
         );
     }
 
+
     // =========================================================
-    // UPDATE
+    // UPDATE EMPLOYEE
     // =========================================================
 
     @Transactional
@@ -599,17 +772,27 @@ public class EmployeeService {
                         id
                 );
 
-        if (dto.getEmail() != null
-                && !dto.getEmail().isBlank()
-                && !dto.getEmail()
-                .equalsIgnoreCase(
-                        employee.getEmail()
-                )) {
+
+        // =====================================================
+        // EMAIL
+        // =====================================================
+
+        if (
+                dto.getEmail() != null
+                        &&
+                        !dto.getEmail().isBlank()
+                        &&
+                        !dto.getEmail()
+                                .equalsIgnoreCase(
+                                        employee.getEmail()
+                                )
+        ) {
 
             String normalizedEmail =
                     dto.getEmail()
                             .trim()
                             .toLowerCase();
+
 
             employeeRepository
                     .findByEmail(
@@ -617,10 +800,12 @@ public class EmployeeService {
                     )
                     .ifPresent(existing -> {
 
-                        if (!existing.getId()
-                                .equals(
-                                        employee.getId()
-                                )) {
+                        if (
+                                !existing.getId()
+                                        .equals(
+                                                employee.getId()
+                                        )
+                        ) {
 
                             throw new RuntimeException(
                                     "Another employee already uses email: "
@@ -629,19 +814,25 @@ public class EmployeeService {
                         }
                     });
 
+
             employee.setEmail(
                     normalizedEmail
             );
 
+
             /*
-             * Keep employee recovery email synchronized.
+             * Keep login recovery email synchronized.
              */
-            if (employee.getUser() != null) {
+            if (
+                    employee.getUser()
+                            != null
+            ) {
 
                 employee.getUser()
                         .setRecoveryEmail(
                                 normalizedEmail
                         );
+
 
                 userRepository.save(
                         employee.getUser()
@@ -649,67 +840,136 @@ public class EmployeeService {
             }
         }
 
-        if (dto.getFirstName() != null) {
+
+        // =====================================================
+        // FIRST NAME
+        // =====================================================
+
+        if (
+                dto.getFirstName()
+                        != null
+        ) {
 
             employee.setFirstName(
                     dto.getFirstName()
             );
         }
 
-        if (dto.getLastName() != null) {
+
+        // =====================================================
+        // LAST NAME
+        // =====================================================
+
+        if (
+                dto.getLastName()
+                        != null
+        ) {
 
             employee.setLastName(
                     dto.getLastName()
             );
         }
 
-        if (dto.getPhone() != null) {
+
+        // =====================================================
+        // PHONE
+        // =====================================================
+
+        if (
+                dto.getPhone()
+                        != null
+        ) {
 
             employee.setPhone(
                     dto.getPhone()
             );
         }
 
-        if (dto.getDepartment() != null) {
+
+        // =====================================================
+        // DEPARTMENT
+        // =====================================================
+
+        if (
+                dto.getDepartment()
+                        != null
+        ) {
 
             employee.setDepartment(
                     dto.getDepartment()
             );
         }
 
-        if (dto.getJobTitle() != null) {
+
+        // =====================================================
+        // JOB TITLE
+        // =====================================================
+
+        if (
+                dto.getJobTitle()
+                        != null
+        ) {
 
             employee.setJobTitle(
                     dto.getJobTitle()
             );
         }
 
-        if (dto.getJoiningDate() != null) {
+
+        // =====================================================
+        // JOINING DATE
+        // =====================================================
+
+        if (
+                dto.getJoiningDate()
+                        != null
+        ) {
 
             employee.setJoiningDate(
                     dto.getJoiningDate()
             );
         }
 
-        if (dto.getSalary() != null) {
+
+        // =====================================================
+        // SALARY
+        // =====================================================
+
+        if (
+                dto.getSalary()
+                        != null
+        ) {
 
             employee.setSalary(
                     dto.getSalary()
             );
         }
 
-        if (dto.getEmploymentStatus() != null) {
+
+        // =====================================================
+        // EMPLOYMENT STATUS
+        // =====================================================
+
+        if (
+                dto.getEmploymentStatus()
+                        != null
+        ) {
 
             String status =
                     dto.getEmploymentStatus()
                             .trim()
                             .toUpperCase();
 
+
             employee.setEmploymentStatus(
                     status
             );
 
-            if (employee.getUser() != null) {
+
+            if (
+                    employee.getUser()
+                            != null
+            ) {
 
                 employee.getUser()
                         .setEnabled(
@@ -718,16 +978,36 @@ public class EmployeeService {
                                 )
                         );
 
+
                 userRepository.save(
                         employee.getUser()
                 );
             }
         }
 
+
+        /*
+         * IMPORTANT SECURITY DECISION:
+         *
+         * Normal employee edit does NOT change account role.
+         *
+         * Otherwise MANAGER users, who can edit employees,
+         * could potentially submit:
+         *
+         * role = ADMIN
+         *
+         * or elevate another account.
+         *
+         * Role is therefore assigned only during creation
+         * through Admin/HR protected employee creation.
+         */
+
+
         Employee updated =
                 employeeRepository.save(
                         employee
                 );
+
 
         auditLogService.log(
                 "EMPLOYEE_UPDATED",
@@ -736,21 +1016,27 @@ public class EmployeeService {
                 "Employee profile updated"
         );
 
+
         return convertToDTO(
                 updated
         );
     }
 
+
     // =========================================================
-    // PERMANENT DELETE
+    // PERMANENT DELETE EMPLOYEE
     // =========================================================
 
     @Transactional
-    public void deleteEmployee(Long id) {
+    public void deleteEmployee(
+            Long id
+    ) {
 
         Employee employee =
                 employeeRepository
-                        .findById(id)
+                        .findById(
+                                id
+                        )
                         .orElseThrow(() ->
                                 new RuntimeException(
                                         "Employee not found with ID: "
@@ -758,20 +1044,35 @@ public class EmployeeService {
                                 )
                         );
 
-        User linkedUser = employee.getUser();
-        Long employeeId = employee.getId();
+
+        User linkedUser =
+                employee.getUser();
+
+
+        Long employeeId =
+                employee.getId();
+
 
         String employeeName =
                 (
-                        safe(employee.getFirstName())
+                        safe(
+                                employee.getFirstName()
+                        )
                                 + " "
-                                + safe(employee.getLastName())
+                                + safe(
+                                employee.getLastName()
+                        )
                 ).trim();
+
 
         String linkedUsername =
                 linkedUser == null
+
                         ? null
-                        : linkedUser.getUsername();
+
+                        : linkedUser
+                        .getUsername();
+
 
         auditLogService.log(
                 "EMPLOYEE_DELETED",
@@ -781,22 +1082,30 @@ public class EmployeeService {
                         + employeeName
         );
 
-        /*
-         * Production/runtime path.
-         *
-         * PostgreSQL is the source of truth for cascade deletion.
-         * This exact order is safe with employees.user_id -> users.id
-         * being NO ACTION: delete Employee first, then User.
-         */
-        if (jdbcTemplate != null) {
 
-            if (linkedUsername != null
-                    && !linkedUsername.isBlank()) {
+        /*
+         * Production / PostgreSQL deletion path.
+         */
+        if (
+                jdbcTemplate
+                        != null
+        ) {
+
+            // =================================================
+            // AUTH TOKENS
+            // =================================================
+
+            if (
+                    linkedUsername != null
+                            &&
+                            !linkedUsername.isBlank()
+            ) {
 
                 jdbcTemplate.update(
                         "DELETE FROM password_reset_tokens WHERE username = ?",
                         linkedUsername
                 );
+
 
                 jdbcTemplate.update(
                         "DELETE FROM refresh_tokens WHERE username = ?",
@@ -804,14 +1113,20 @@ public class EmployeeService {
                 );
             }
 
-            /*
-             * Safe for databases created before V10 too.
-             * V10 adds the actual FK cascade for future consistency.
-             */
+
+            // =================================================
+            // NOTIFICATIONS
+            // =================================================
+
             jdbcTemplate.update(
                     "DELETE FROM notifications WHERE employee_id = ?",
                     employeeId
             );
+
+
+            // =================================================
+            // EMPLOYEE
+            // =================================================
 
             int deletedEmployees =
                     jdbcTemplate.update(
@@ -819,15 +1134,29 @@ public class EmployeeService {
                             employeeId
                     );
 
-            if (deletedEmployees != 1) {
+
+            if (
+                    deletedEmployees
+                            != 1
+            ) {
+
                 throw new RuntimeException(
                         "Employee deletion failed for ID: "
                                 + employeeId
                 );
             }
 
-            if (linkedUser != null
-                    && linkedUser.getId() != null) {
+
+            // =================================================
+            // LINKED USER
+            // =================================================
+
+            if (
+                    linkedUser != null
+                            &&
+                            linkedUser.getId()
+                                    != null
+            ) {
 
                 jdbcTemplate.update(
                         "DELETE FROM users WHERE id = ?",
@@ -835,24 +1164,43 @@ public class EmployeeService {
                 );
             }
 
+
             return;
         }
 
+
         /*
-         * Repository fallback keeps isolated unit tests simple and remains
-         * correct when the service is instantiated without a Spring context.
+         * Repository fallback.
+         *
+         * Mainly useful for isolated tests where JdbcTemplate
+         * is unavailable.
          */
-        employeeRepository.delete(employee);
+
+        employeeRepository.delete(
+                employee
+        );
+
+
         employeeRepository.flush();
 
-        if (linkedUser != null) {
-            userRepository.delete(linkedUser);
+
+        if (
+                linkedUser
+                        != null
+        ) {
+
+            userRepository.delete(
+                    linkedUser
+            );
+
+
             userRepository.flush();
         }
     }
 
+
     // =========================================================
-    // SEARCH
+    // SEARCH EMPLOYEES
     // =========================================================
 
     public List<EmployeeDTO> searchEmployees(
@@ -861,10 +1209,13 @@ public class EmployeeService {
 
         String search =
                 keyword == null
+
                         ? ""
+
                         : keyword
                         .toLowerCase()
                         .trim();
+
 
         return employeeRepository
                 .findAll()
@@ -912,8 +1263,9 @@ public class EmployeeService {
                 );
     }
 
+
     // =========================================================
-    // DEPARTMENT
+    // EMPLOYEES BY DEPARTMENT
     // =========================================================
 
     public List<EmployeeDTO> getEmployeesByDepartment(
@@ -925,7 +1277,8 @@ public class EmployeeService {
                 .stream()
                 .filter(employee ->
 
-                        employee.getDepartment() != null
+                        employee.getDepartment()
+                                != null
 
                                 &&
 
@@ -942,8 +1295,9 @@ public class EmployeeService {
                 );
     }
 
+
     // =========================================================
-    // STATUS
+    // EMPLOYEES BY STATUS
     // =========================================================
 
     public List<EmployeeDTO> getEmployeesByStatus(
@@ -955,7 +1309,8 @@ public class EmployeeService {
                 .stream()
                 .filter(employee ->
 
-                        employee.getEmploymentStatus() != null
+                        employee.getEmploymentStatus()
+                                != null
 
                                 &&
 
@@ -972,13 +1327,15 @@ public class EmployeeService {
                 );
     }
 
+
     // =========================================================
-    // INTERNAL PENDING USERNAME
+    // GENERATE INTERNAL PENDING USERNAME
     // =========================================================
 
     private String generatePendingUsername() {
 
         String candidate;
+
 
         do {
 
@@ -996,6 +1353,7 @@ public class EmployeeService {
                             );
 
         } while (
+
                 userRepository
                         .findByUsername(
                                 candidate
@@ -1003,11 +1361,67 @@ public class EmployeeService {
                         .isPresent()
         );
 
+
         return candidate;
     }
 
+
     // =========================================================
-    // ENTITY HELPER
+    // NORMALIZE ACCOUNT ROLE
+    // =========================================================
+
+    private String normalizeRequestedRole(
+            String requestedRole
+    ) {
+
+        /*
+         * Backward compatibility:
+         *
+         * If frontend does not send role,
+         * create ordinary EMPLOYEE.
+         */
+
+        if (
+                requestedRole == null
+                        ||
+                        requestedRole.isBlank()
+        ) {
+
+            return "EMPLOYEE";
+        }
+
+
+        String role =
+                requestedRole
+                        .trim()
+                        .toUpperCase();
+
+
+        /*
+         * ADMIN is deliberately excluded.
+         *
+         * Normal employee creation must never become
+         * an unrestricted Admin account creation endpoint.
+         */
+
+        return switch (role) {
+
+            case "EMPLOYEE",
+                 "MANAGER",
+                 "HR" -> role;
+
+
+            default ->
+                    throw new RuntimeException(
+                            "Invalid employee role: "
+                                    + requestedRole
+                    );
+        };
+    }
+
+
+    // =========================================================
+    // INTERNAL ENTITY HELPER
     // =========================================================
 
     private Employee getEmployeeEntity(
@@ -1026,8 +1440,9 @@ public class EmployeeService {
                 );
     }
 
+
     // =========================================================
-    // DTO
+    // CONVERT ENTITY TO DTO
     // =========================================================
 
     private EmployeeDTO convertToDTO(
@@ -1037,68 +1452,98 @@ public class EmployeeService {
         EmployeeDTO dto =
                 new EmployeeDTO();
 
+
         dto.setId(
                 employee.getId()
         );
+
 
         dto.setFirstName(
                 employee.getFirstName()
         );
 
+
         dto.setLastName(
                 employee.getLastName()
         );
+
 
         dto.setEmail(
                 employee.getEmail()
         );
 
+
         dto.setPhone(
                 employee.getPhone()
         );
+
 
         dto.setDepartment(
                 employee.getDepartment()
         );
 
+
         dto.setJobTitle(
                 employee.getJobTitle()
         );
+
 
         dto.setJoiningDate(
                 employee.getJoiningDate()
         );
 
+
         dto.setSalary(
                 employee.getSalary()
         );
+
 
         dto.setEmploymentStatus(
                 employee.getEmploymentStatus()
         );
 
+
         dto.setApprovalStatus(
                 employee.getApprovalStatus()
         );
 
-        if (employee.getUser() != null) {
+
+        if (
+                employee.getUser()
+                        != null
+        ) {
 
             dto.setUserId(
                     employee.getUser()
                             .getId()
             );
 
+
+            /*
+             * NEW:
+             * Return linked account role to frontend.
+             */
+            dto.setRole(
+                    employee.getUser()
+                            .getRole()
+            );
+
+
             String linkedUsername =
                     employee.getUser()
                             .getUsername();
 
+
             /*
-             * Never expose internal pending username.
+             * Never expose internal pending usernames.
              */
-            if (linkedUsername != null
-                    && !linkedUsername.startsWith(
-                    "pending_"
-            )) {
+            if (
+                    linkedUsername != null
+                            &&
+                            !linkedUsername.startsWith(
+                                    "pending_"
+                            )
+            ) {
 
                 dto.setUsername(
                         linkedUsername
@@ -1106,11 +1551,13 @@ public class EmployeeService {
             }
         }
 
+
         return dto;
     }
 
+
     // =========================================================
-    // HELPERS
+    // STRING SEARCH HELPER
     // =========================================================
 
     private boolean containsIgnoreCase(
@@ -1126,6 +1573,11 @@ public class EmployeeService {
                                 search
                         );
     }
+
+
+    // =========================================================
+    // NULL-SAFE STRING
+    // =========================================================
 
     private String safe(
             String value

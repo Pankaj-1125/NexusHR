@@ -46,6 +46,7 @@ const emptyEmployee = {
   salary: "",
   joiningDate: "",
   employmentStatus: "ACTIVE",
+  role: "EMPLOYEE",
 };
 
 const STATUS_META = [
@@ -810,6 +811,7 @@ function openEditEmployee(employee) {
       employmentStatus:
         employee.employmentStatus ||
         "ACTIVE",
+      role: employee.role || "EMPLOYEE",
     });
 
     setFormErrors({});
@@ -3505,6 +3507,34 @@ function openEditEmployee(employee) {
                     handleFormChange
                   }
                 />
+
+                {!editingEmployee && (
+                  <div className="form-field">
+                    <label htmlFor="role">
+                      Account Role
+                      <span className="required">*</span>
+                    </label>
+
+                    <select
+                      id="role"
+                      name="role"
+                      value={form.role || "EMPLOYEE"}
+                      onChange={handleFormChange}
+                    >
+                      <option value="EMPLOYEE">
+                        Employee
+                      </option>
+
+                      <option value="MANAGER">
+                        Manager
+                      </option>
+
+                      <option value="HR">
+                        HR
+                      </option>
+                    </select>
+                  </div>
+                )}
 
                 <FormField
                   label="Salary"
