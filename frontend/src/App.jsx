@@ -339,36 +339,50 @@ function useClickOutside(ref, handler) {
 function App() {
   const [theme, setTheme] = useTheme();
 
+  // Load an existing local session immediately.
+  // On a new device/browser this is null, so the login page can render at once.
   const [user, setUser] = useState(() => loadAuthSession());
-  const [authChecking, setAuthChecking] = useState(() => !loadAuthSession());
 
   useEffect(() => {
-    if (user) {
-      setAuthChecking(false);
-      return undefined;
-    }
-
     let active = true;
 
-    // Restore a valid HttpOnly-cookie session when localStorage is missing.
-    // This also makes refreshes resilient to older/stale frontend sessions.
-    apiFetch("/auth/me")
+    // Always wake the Render backend in the background.
+    // This request never blocks the page.
+    wakeBackend();
+
+    // If localStorage already contains a valid session, keep using it.
+    // The dashboard can render immediately.
+    const localSession = loadAuthSession();
+
+    if (localSession) {
+      setUser(localSession);
+
+      return () => {
+        active = false;
+      };
+    }
+
+    // New device / browser:
+    // show Login immediately, while cookie-session recovery happens in background.
+    setUser(null);
+
+    apiFetch('/auth/me')
       .then((profile) => {
-        if (active && profile?.username) {
-          setUser({
-            ...profile,
-            role: String(profile.role || "").startsWith("ROLE_")
-              ? profile.role
-              : `ROLE_${String(profile.role || "").toUpperCase()}`,
-            cookieSession: true,
-          });
+        if (!active || !profile?.username) {
+          return;
         }
+
+        setUser({
+          ...profile,
+          role: String(profile.role || '').startsWith('ROLE_')
+            ? profile.role
+            : `ROLE_${String(profile.role || '').toUpperCase()}`,
+          cookieSession: true,
+        });
       })
       .catch(() => {
-        // No valid server session: the login page is the correct next state.
-      })
-      .finally(() => {
-        if (active) setAuthChecking(false);
+        // No valid server cookie session.
+        // Login remains visible and the user is not blocked.
       });
 
     return () => {
@@ -376,36 +390,59 @@ function App() {
     };
   }, []);
 
+  function wakeBackend() {
+    const controller = new AbortController();
+
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+    }, 5000);
+
+    fetch(HEALTH_API, {
+      method: 'GET',
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+      .catch(() => {
+        // Render Free may still be waking up.
+        // Ignore this because startup should never block the UI.
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+      });
+  }
+
   const handleLogin = (loginData) => {
     const session = saveAuthSession(loginData);
     setUser(session);
   };
 
   const handleLogout = () => {
-    fetch(apiUrl("/auth/logout"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: null }),
-    }).catch(() => {});
-
+    // Clear the browser immediately so logout feels instant.
     clearAuthSession();
     setUser(null);
+
+    // Tell the backend in the background.
+    fetch(apiUrl('/auth/logout'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        refreshToken: null,
+      }),
+    }).catch(() => {});
   };
 
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/careers")) {
+  if (
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/careers')
+  ) {
     return <PublicCareers />;
   }
 
-  if (authChecking) {
-    return (
-      <div className="auth-boot-screen" role="status" aria-live="polite">
-        <div className="auth-boot-mark">NX</div>
-        <strong>Restoring secure session…</strong>
-      </div>
-    );
-  }
-
+  // No blocking "Restoring secure session..." screen.
+  // New browsers/devices see Login immediately.
   if (!user) {
     return <Login onLogin={handleLogin} />;
   }
@@ -419,6 +456,7 @@ function App() {
     />
   );
 }
+
 
 function Dashboard({
 
