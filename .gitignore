@@ -22,3 +22,4 @@ backend/employee-document-test.txt
 openEditEmployee(employee)}
 openViewEmployee(employee)}
 requestDelete(employee)}
+gmail-client.json
